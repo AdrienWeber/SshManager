@@ -1,6 +1,10 @@
 # SSH Manager
-
+<p align="center">
+<img width="300" height="300" alt="SshManagerIcon" src="https://github.com/user-attachments/assets/d20f2e0b-074e-43a6-93c8-0e5430101ff5" />
+</p>
 A small, native macOS app for managing SSH servers, tunnels and files. No account, no subscription, no cloud sync.
+
+<img width="1697" height="1015" alt="Screenshot" src="https://github.com/user-attachments/assets/9ab96e50-7318-490b-bba3-d2f7029977b0" />
 
 ## Why
 
