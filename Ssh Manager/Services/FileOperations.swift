@@ -136,6 +136,77 @@ nonisolated enum FileOperations {
         }
     }
 
+    // MARK: - Text editing
+
+    /// Files larger than this aren't opened in the built-in editor.
+    static let maxEditableSize: Int64 = 5 * 1024 * 1024
+
+    /// Reads a UTF-8 text file for the editor.
+    @concurrent
+    static func readText(at path: String, at location: FileLocation) async throws -> String {
+        let data: Data
+        switch location {
+        case .local:
+            let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.int64Value ?? 0
+            guard size <= maxEditableSize else { throw tooLargeError }
+            data = try Data(contentsOf: URL(fileURLWithPath: path))
+        case .remote(let server):
+            // base64 keeps the bytes intact (output is otherwise decoded as text, lossily);
+            // the marker skips anything a noisy shell profile prints first.
+            let file = SSH.quote(path)
+            let script = """
+            [ -f \(file) ] || { echo 'Only regular files can be edited.' >&2; exit 3; }
+            [ -r \(file) ] || { echo 'You don’t have permission to read this file.' >&2; exit 4; }
+            size=$(wc -c < \(file) | tr -d ' ')
+            [ "$size" -le \(maxEditableSize) ] || { echo 'SSHMGR_TOO_LARGE' >&2; exit 5; }
+            printf 'SSHMGR_FILE:'
+            base64 < \(file)
+            """
+            let output: String
+            do {
+                output = try await SSH.run(server, script: script)
+            } catch let error as SSHError where error.message.contains("SSHMGR_TOO_LARGE") {
+                throw tooLargeError
+            }
+            guard let markerRange = output.range(of: "SSHMGR_FILE:"),
+                  let decoded = Data(base64Encoded: String(output[markerRange.upperBound...]),
+                                     options: .ignoreUnknownCharacters) else {
+                throw SSHError("Unexpected response from \(server.name).")
+            }
+            data = decoded
+        }
+
+        guard !data.contains(0), let text = String(data: data, encoding: .utf8) else {
+            throw SSHError("This file isn’t UTF-8 text, so it can’t be edited here.")
+        }
+        return text
+    }
+
+    /// Saves editor contents, keeping the file's permissions and owner.
+    @concurrent
+    static func writeText(_ text: String, to path: String, at location: FileLocation) async throws {
+        let data = Data(text.utf8)
+        switch location {
+        case .local:
+            // Not atomic on purpose: replacing the file would drop its permissions and extended attributes.
+            try data.write(to: URL(fileURLWithPath: path))
+        case .remote(let server):
+            // Upload to a temporary file first, so a dropped connection can't leave the
+            // original half-written; then overwrite in place, which keeps mode and owner.
+            let script = """
+            tmp=$(mktemp) || exit 1
+            trap 'rm -f "$tmp"' EXIT
+            cat > "$tmp" || exit 1
+            cat "$tmp" > \(SSH.quote(path))
+            """
+            try await SSH.run(server, script: script, input: data)
+        }
+    }
+
+    private static var tooLargeError: SSHError {
+        SSHError("This file is larger than \(maxEditableSize.formatted(.byteCount(style: .file))), too large for the built-in editor.")
+    }
+
     // MARK: - Transfers
 
     /// Transfers items while reporting progress.

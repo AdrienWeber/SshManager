@@ -82,6 +82,9 @@ struct FileTransferView: View {
 }
 
 /// Listens for the side buttons on a mouse (button 4 = back, button 5 = forward).
+///
+/// Some mouse drivers (e.g. Logitech Options+) send a swipe gesture for these buttons instead,
+/// as browsers understand that too, so swipes are handled the same way.
 final class MouseNavigationMonitor {
     enum Direction {
         case back, forward
@@ -91,12 +94,21 @@ final class MouseNavigationMonitor {
 
     func start(_ handler: @escaping (Direction) -> Void) {
         stop()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { event in
-            switch event.buttonNumber {
-            case 3:
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.otherMouseDown, .swipe]) { event in
+            // Leave sheets (e.g. the file editor) alone so the folder doesn't change behind them.
+            if event.window?.sheetParent != nil { return event }
+            switch event.type {
+            case .otherMouseDown where event.buttonNumber == 3:
                 handler(.back)
                 return nil
-            case 4:
+            case .otherMouseDown where event.buttonNumber == 4:
+                handler(.forward)
+                return nil
+            // Same convention as Safari: a positive deltaX means "back".
+            case .swipe where event.deltaX > 0:
+                handler(.back)
+                return nil
+            case .swipe where event.deltaX < 0:
                 handler(.forward)
                 return nil
             default:

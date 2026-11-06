@@ -137,12 +137,14 @@ nonisolated enum SSH {
     private static var baseArguments: [String] { ["-F", SSHPaths.configFile.path] }
 
     /// Runs a POSIX shell script on the server. Wrapped in `sh -c` so it works whatever the login shell is.
+    /// `input`, if given, is sent to the script's standard input.
     @discardableResult
-    static func run(_ server: Server, script: String) async throws -> String {
+    static func run(_ server: Server, script: String, input: Data? = nil) async throws -> String {
         let result = try await ProcessRunner.run(
             SSHPaths.ssh,
             baseArguments + [server.alias, "sh -c " + quote(script)],
-            environment: AskPass.environment(for: server)
+            environment: AskPass.environment(for: server),
+            input: input
         )
         guard result.status == 0 else { throw failure(result, server: server) }
         return result.stdout

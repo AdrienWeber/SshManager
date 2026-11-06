@@ -13,7 +13,12 @@ struct TerminalSessionView: View {
         TerminalHostView(session: session)
             .id(session.generation)
             .overlay(alignment: .bottom) {
-                if case .ended(let exitCode) = session.state {
+                switch session.state {
+                case .running:
+                    EmptyView()
+                case .reconnecting(let attempt):
+                    reconnectingBanner(attempt: attempt)
+                case .ended(let exitCode):
                     endedBanner(exitCode: exitCode)
                 }
             }
@@ -27,6 +32,21 @@ struct TerminalSessionView: View {
                         .help("Close session")
                 }
             }
+    }
+
+    private func reconnectingBanner(attempt: Int) -> some View {
+        HStack(spacing: 12) {
+            ProgressView().controlSize(.small)
+            Text("Connection lost. Reconnecting (attempt \(attempt) of \(TerminalSession.maxReconnectAttempts))…")
+            Spacer()
+            Button("Stop") { session.cancelReconnect() }
+            Button("Reconnect Now") { session.connect() }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: .rect(cornerRadius: 10))
+        .padding(12)
     }
 
     private func endedBanner(exitCode: Int32?) -> some View {

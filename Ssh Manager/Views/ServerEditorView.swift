@@ -55,7 +55,9 @@ struct ServerEditorView: View {
                             Image(systemName: "chevron.down")
                         }
                         .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
                         .fixedSize()
+                        .help("Choose an existing group")
                     }
                 }
             }

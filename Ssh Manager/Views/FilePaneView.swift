@@ -17,6 +17,7 @@ struct FilePaneView: View {
     @State private var deleteTargets: [FileEntry] = []
     @State private var operationError: String?
     @State private var isDropTargeted = false
+    @State private var editRequest: EditRequest?
 
     private var otherPane: PaneModel { model.other(than: pane) }
     private var arrowIcon: String { model.isLeft(pane) ? "arrow.right" : "arrow.left" }
@@ -61,6 +62,10 @@ struct FilePaneView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(operationError ?? "")
+        }
+        .sheet(item: $editRequest) { request in
+            // Refresh so the list shows the new size and modification date.
+            FileEditorView(request: request) { Task { await pane.load() } }
         }
     }
 
@@ -224,6 +229,11 @@ struct FilePaneView: View {
         } else {
             if entries.count == 1, entries[0].isDirectory || pane.location.isLocal {
                 Button("Open", systemImage: "arrow.up.forward.app") { open(entries) }
+            }
+            if entries.count == 1, !entries[0].isDirectory {
+                Button("Edit", systemImage: "square.and.pencil") { edit(entries[0]) }
+            }
+            if entries.count == 1 {
                 Divider()
             }
             Button("Copy to \(otherPane.location.title)", systemImage: "doc.on.doc") {
@@ -284,7 +294,13 @@ struct FilePaneView: View {
             Task { await pane.load(path: entry.path) }
         } else if pane.location.isLocal {
             NSWorkspace.shared.open(URL(fileURLWithPath: entry.path))
+        } else {
+            edit(entry)
         }
+    }
+
+    private func edit(_ entry: FileEntry) {
+        editRequest = EditRequest(entry: entry, location: pane.location)
     }
 
     private func transfer(_ entries: [FileEntry], move: Bool) {

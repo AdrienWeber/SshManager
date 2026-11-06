@@ -16,15 +16,17 @@ nonisolated enum ProcessRunner {
     ///
     /// Output goes to temporary files instead of pipes: an ssh ControlPersist master forks into the
     /// background and keeps the inherited stderr open, which would make reading a pipe to EOF hang.
+    /// `input`, if given, is fed to the process's standard input.
     static func run(_ executable: String,
                     _ arguments: [String],
-                    environment: [String: String] = [:]) async throws -> ProcessResult {
+                    environment: [String: String] = [:],
+                    input: Data? = nil) async throws -> ProcessResult {
         let handle = ProcessHandle()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
-                        let result = try runBlocking(handle, executable, arguments, environment)
+                        let result = try runBlocking(handle, executable, arguments, environment, input)
                         continuation.resume(returning: result)
                     } catch {
                         continuation.resume(throwing: error)
@@ -39,18 +41,32 @@ nonisolated enum ProcessRunner {
     private static func runBlocking(_ handle: ProcessHandle,
                                     _ executable: String,
                                     _ arguments: [String],
-                                    _ environment: [String: String]) throws -> ProcessResult {
+                                    _ environment: [String: String],
+                                    _ input: Data?) throws -> ProcessResult {
         let process = handle.process
         let fileManager = FileManager.default
         let base = fileManager.temporaryDirectory.appending(path: "sshmgr-\(UUID().uuidString)")
         let outURL = base.appendingPathExtension("out")
         let errURL = base.appendingPathExtension("err")
+        let inURL = base.appendingPathExtension("in")
         fileManager.createFile(atPath: outURL.path, contents: nil)
         fileManager.createFile(atPath: errURL.path, contents: nil)
         defer {
             try? fileManager.removeItem(at: outURL)
             try? fileManager.removeItem(at: errURL)
+            try? fileManager.removeItem(at: inURL)
         }
+
+        // Input is read from a private temporary file too, which avoids pipe buffer deadlocks.
+        var inHandle: FileHandle?
+        if let input {
+            guard fileManager.createFile(atPath: inURL.path, contents: input,
+                                         attributes: [.posixPermissions: 0o600]) else {
+                throw SSHError("Couldn't prepare the data to send.")
+            }
+            inHandle = try FileHandle(forReadingFrom: inURL)
+        }
+        defer { try? inHandle?.close() }
 
         let outHandle = try FileHandle(forWritingTo: outURL)
         let errHandle = try FileHandle(forWritingTo: errURL)

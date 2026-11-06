@@ -253,14 +253,30 @@ struct SessionRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
                     .lineLimit(1)
-                Text(session.state == .running ? (session.title ?? "Connected") : "Disconnected")
+                Text(statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         } icon: {
             Image(systemName: "terminal")
-                .foregroundStyle(session.state == .running ? Color.green : Color.secondary)
+                .foregroundStyle(iconColor)
+        }
+    }
+
+    private var statusText: String {
+        switch session.state {
+        case .running: session.title ?? "Connected"
+        case .reconnecting: "Reconnecting…"
+        case .ended: "Disconnected"
+        }
+    }
+
+    private var iconColor: Color {
+        switch session.state {
+        case .running: .green
+        case .reconnecting: .orange
+        case .ended: .secondary
         }
     }
 }
